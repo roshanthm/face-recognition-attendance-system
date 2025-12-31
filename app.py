@@ -9,14 +9,20 @@ from database import init_db, get_db
 from face_utils import capture_face_encoding
 
 app = Flask(__name__)
+
+# Initialize DB (creates tables if missing)
 init_db()
 
-# ---------------- HOME ----------------
+# -------------------------------------------------
+# HOME
+# -------------------------------------------------
 @app.route("/")
 def home():
     return "Face Recognition Attendance Backend Running"
 
-# ---------------- REGISTER ----------------
+# -------------------------------------------------
+# REGISTER STUDENT (FACE ENROLLMENT)
+# -------------------------------------------------
 @app.route("/register", methods=["POST"])
 def register():
     data = request.json
@@ -46,7 +52,9 @@ def register():
     conn.close()
     return jsonify({"message": "Student registered successfully"})
 
-# ---------------- ATTENDANCE ----------------
+# -------------------------------------------------
+# MARK ATTENDANCE
+# -------------------------------------------------
 @app.route("/attendance", methods=["POST"])
 def mark_attendance():
     encoding = capture_face_encoding()
@@ -77,6 +85,15 @@ def mark_attendance():
     roll_no = roll_nos[matches.index(True)]
     now = datetime.now()
 
+    # Prevent duplicate attendance for same day
+    cur.execute(
+        "SELECT 1 FROM attendance WHERE roll_no=? AND date=?",
+        (roll_no, now.date().isoformat())
+    )
+    if cur.fetchone():
+        conn.close()
+        return jsonify({"message": f"Attendance already marked for {roll_no}"})
+
     cur.execute(
         "INSERT INTO attendance (roll_no, date, time) VALUES (?, ?, ?)",
         (roll_no, now.date().isoformat(), now.time().strftime("%H:%M:%S"))
@@ -86,7 +103,9 @@ def mark_attendance():
 
     return jsonify({"message": f"Attendance marked for {roll_no}"})
 
-# ---------------- ADMIN: STUDENTS ----------------
+# -------------------------------------------------
+# ADMIN: VIEW STUDENTS
+# -------------------------------------------------
 @app.route("/admin/students")
 def admin_students():
     conn = get_db()
@@ -96,7 +115,9 @@ def admin_students():
     conn.close()
     return jsonify(data)
 
-# ---------------- ADMIN: ATTENDANCE ----------------
+# -------------------------------------------------
+# ADMIN: VIEW ATTENDANCE
+# -------------------------------------------------
 @app.route("/admin/attendance")
 def admin_attendance():
     conn = get_db()
@@ -106,12 +127,15 @@ def admin_attendance():
     conn.close()
     return jsonify(data)
 
-# ---------------- ADMIN: EXPORT ----------------
+# -------------------------------------------------
+# ADMIN: EXPORT ATTENDANCE TO EXCEL
+# -------------------------------------------------
 @app.route("/admin/export")
 def export_attendance():
     conn = get_db()
     df = pd.read_sql_query(
-        "SELECT roll_no, date, time FROM attendance", conn
+        "SELECT roll_no, date, time FROM attendance",
+        conn
     )
     conn.close()
 
@@ -121,6 +145,6 @@ def export_attendance():
 
     return send_file(file_path, as_attachment=True)
 
-# ---------------- RUN ----------------
+# -------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True)
